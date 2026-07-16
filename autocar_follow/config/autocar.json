@@ -1,0 +1,129 @@
+{
+  "runtime": {
+    "simulation": true,
+    "loop_hz": 8,
+    "log_level": "INFO",
+    "memory_cleanup_seconds": 300.0
+  },
+  "camera": {
+    "width": 320,
+    "height": 320,
+    "inference_width": 320,
+    "inference_height": 320,
+    "fps": 30,
+    "flip_method": 0
+  },
+  "camera_tracking": {
+    "enabled": true,
+    "pan_center": 90.0,
+    "tilt_center": 0.0,
+    "pan_min": 20.0,
+    "pan_max": 160.0,
+    "tilt_min": 0.0,
+    "tilt_max": 90.0,
+    "pan_gain_deg": 6.0,
+    "tilt_gain_deg": 4.0,
+    "max_step_deg": 3.0,
+    "deadband_x": 0.12,
+    "deadband_y": 0.12,
+    "update_interval_seconds": 0.12,
+    "pan_direction": 1.0,
+    "tilt_direction": -1.0
+  },
+  "detector": {
+    "backend": "pop",
+    "repo": "/Project/KNU_RC/vendor/yolov5",
+    "weights": "/Project/KNU_RC/models/yolov5n.pt",
+    "confidence": 0.45,
+    "iou": 0.45,
+    "device": "cuda:0"
+  },
+  "pose": {
+    "enabled": false,
+    "backend": "trt_pose",
+    "model": "/home/soda/Project/python/notebook/models/resnet18_baseline_att_224x224_A_epoch_249.pth",
+    "device": "cuda:0",
+    "input_size": 224,
+    "crop_padding_ratio": 0.15,
+    "keypoint_threshold": 0.1,
+    "inference_fps": 4.0,
+    "gesture_timeout_seconds": 5.0,
+    "y_pose_hold_seconds": 1.2,
+    "y_pose_sample_count": 6,
+    "y_pose_min_hits": 4,
+    "y_pose_min_wrist_raise_ratio": 0.15,
+    "y_pose_min_wrist_separation_ratio": 1.2,
+    "y_pose_max_elbow_drop_ratio": 0.25
+  },
+  "aruco": {
+    "enabled": false,
+    "dictionary": "DICT_4X4_50",
+    "owner_id": 0,
+    "scan_fps": 8.0,
+    "sample_count": 5,
+    "min_hits": 3,
+    "min_side_px": 50.0,
+    "timeout_seconds": 5.0,
+    "bbox_margin_ratio": 0.1
+  },
+  "selection": {
+    "sample_count": 5,
+    "min_hits": 3,
+    "locked_loss_seconds": 1.0
+  },
+  "owner": {
+    "registration_frames": 20,
+    "confirm_score": 0.7,
+    "ambiguity_margin": 0.12,
+    "search_seconds": 5.0,
+    "center_registration_seconds": 1.5,
+    "center_tolerance_x": 0.18,
+    "center_tolerance_y": 0.30
+  },
+  "driving": {
+    "max_speed": 99,
+    "manual_max_speed": 99,
+    "dashboard_max_speed": 99,
+    "min_follow_speed": 50,
+    "target_distance_m": 0.3,
+    "stop_distance_m": 0.2,
+    "emergency_distance_m": 0.1,
+    "steering_kp": 1.4,
+    "steering_deadband": 0.08,
+    "target_owner_height_ratio": 0.72,
+    "hard_stop_owner_height_ratio": 0.88,
+    "visual_size_deadband": 0.03,
+    "visual_size_ema_alpha": 0.25,
+    "visual_speed_kp": 80.0
+  },
+  "lidar": {
+    "enabled": true,
+    "port": "auto",
+    "baudrates": [115200, 256000],
+    "front_angle_deg": 0.0,
+    "clockwise": false,
+    "camera_fov_deg": 160.0,
+    "association_window_deg": 5.0
+  },
+  "bluetooth": {
+    "enabled": false,
+    "owner_mac": "",
+    "poll_seconds": 1.0
+  },
+  "tts": {
+    "enabled": true,
+    "backend": "piper",
+    "piper_command": "piper",
+    "model": "/Project/KNU_RC/models/ko_KR-kss-medium.onnx",
+    "config": "/Project/KNU_RC/models/ko_KR-kss-medium.onnx.json",
+    "message_owner_lost": "사용자를 찾을 수 없습니다."
+  },
+  "web": {
+    "host": "0.0.0.0",
+    "port": 8080,
+    "stream_fps": 5,
+    "secret_key_env": "KNU_RC_SECRET_KEY",
+    "user_env": "KNU_RC_USER",
+    "password_env": "KNU_RC_PASSWORD"
+  }
+}

@@ -1,0 +1,7 @@
+# Soda OS / Jetson system packages provide OpenCV, NumPy and PyTorch.
+Flask==2.0.3
+Werkzeug==2.0.3
+waitress==2.0.0
+rplidar-roboticia==0.9.5
+# Install the board/vendor-compatible PyTorch build separately.
+# Do not install current ultralytics: it does not support Python 3.6/CUDA 10.2.

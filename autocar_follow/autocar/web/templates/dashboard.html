@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>KNU AutoCAR Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+</head>
+<body>
+  <header>
+    <div><div class="eyebrow">KNU · OWNER FOLLOW</div><h1>AutoCAR Command Deck</h1></div>
+    <div class="header-actions"><span id="clock">--:--:--</span><form action="/logout" method="post"><button>로그아웃</button></form></div>
+  </header>
+  <main>
+    <section class="hero panel">
+      <div class="section-title"><span>YOLO LIVE</span><span id="fps">AI 0 FPS</span></div>
+      <div class="video-wrap"><img src="/video.mjpg" alt="YOLO 인식 영상"><div id="state-overlay">INIT</div></div>
+    </section>
+    <section class="lidar panel">
+      <div class="section-title"><span>RPLIDAR 360°</span><span id="lidar-status">OFFLINE</span></div>
+      <canvas id="lidar" width="520" height="420"></canvas>
+    </section>
+    <section class="metrics panel">
+      <div class="section-title"><span>SYSTEM TELEMETRY</span><span id="updated">--</span></div>
+      <div class="metric-grid">
+        <article><label>상태</label><strong id="state">INIT</strong><small id="reason">starting</small></article>
+        <article><label>주인 판정</label><strong id="owner">NONE</strong><small id="people">0 people</small></article>
+        <article><label>주인 거리 (LiDAR 참고값)</label><strong id="distance">-- m</strong><small>속도 계산에 사용하지 않음</small></article>
+        <article><label>카메라 주인 크기</label><strong id="owner-size">--%</strong><small>목표 <span id="target-owner-size">--</span>%</small></article>
+        <article><label>전방 장애물</label><strong id="obstacle">-- m</strong><small>비상 <span id="emergency-distance">--</span> m</small></article>
+        <article><label>Bluetooth</label><strong id="bluetooth">OFF</strong><small>MAC 인증</small></article>
+        <article><label>구동</label><strong id="drive">0 / 0.00</strong><small>속도 / 조향</small></article>
+        <article><label>카메라 방향</label><strong id="camera-axis">90° / 0°</strong><small>PAN / TILT</small></article>
+        <article><label>주변 밝기</label><strong id="cds-value">--</strong><small id="cds-status">CDS OFFLINE</small></article>
+        <article><label>초기 사용자 자동 선택</label><strong id="selection-status">IDLE</strong><small id="selection-detail">가장 가까운 사람 · 등록 0%</small></article>
+        <article><label>속도 제한</label><strong id="speed-limit-metric">0</strong><small>현재 런타임 상한</small></article>
+        <article><label>프로세스 메모리</label><strong id="memory-rss">-- MB</strong><small id="memory-cleanups">정리 0회</small></article>
+        <article><label>로컬 지연 추정</label><strong id="latency-estimate">-- ms</strong><small>추론 <span id="inference-latency">--</span> · 처리 <span id="processing-latency">--</span> · 프레임 <span id="frame-age">--</span> · API <span id="api-rtt">--</span> ms</small></article>
+      </div>
+    </section>
+    <section class="controls panel">
+      <div class="section-title"><span>CONTROL</span><span>AUTHENTICATED</span></div>
+      <div class="mode-actions">
+        <button class="primary" data-action="start">추종 시작</button>
+        <button data-action="stop">안전 정지</button>
+        <button data-action="reset">비상 해제</button>
+        <button class="danger" data-action="emergency">비상정지</button>
+      </div>
+      <div class="speed-control">
+        <label for="speed-limit">차량 속도 제한 <output id="speed-value">15</output></label>
+        <input id="speed-limit" type="range" min="50" max="99" value="50" step="1">
+        <button id="speed-apply" type="button">속도 적용</button>
+        <small>추종과 수동운전에 즉시 적용되며 재시작 후 설정 파일 값으로 복원됩니다.</small>
+      </div>
+      <div class="speed-control">
+        <label for="camera-tilt">카메라 TILT <output id="tilt-value">0°</output></label>
+        <input id="camera-tilt" type="range" min="0" max="90" value="0" step="1">
+        <button id="tilt-apply" type="button">TILT 적용</button>
+        <small>즉시 적용되며 추종 중에는 자동 상하 추적이 현재 각도에서 계속됩니다.</small>
+      </div>
+      <div class="manual-pad">
+        <button data-manual="forward">▲</button><button data-manual="left">◀</button>
+        <button data-manual="stop">■</button><button data-manual="right">▶</button>
+        <button data-manual="backward">▼</button><button data-manual="exit">수동 종료</button>
+      </div>
+      <div id="notice">추종 시작 후 카메라에서 가장 크게 보이는 사람이 자동 등록됩니다.</div>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+</body>
+</html>

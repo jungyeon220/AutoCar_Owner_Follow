@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>KNU AutoCAR 로그인</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+</head>
+<body class="login-body">
+  <form class="login-card" method="post">
+    <div class="eyebrow">KNU · ON-DEVICE AI</div>
+    <h1>AutoCAR Control</h1>
+    <p>인증된 운영자만 차량을 제어할 수 있습니다.</p>
+    {% if error %}<div class="login-error">{{ error }}</div>{% endif %}
+    <label>사용자<input name="username" autocomplete="username" required></label>
+    <label>비밀번호<input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="primary" type="submit">대시보드 접속</button>
+  </form>
+</body>
+</html>
