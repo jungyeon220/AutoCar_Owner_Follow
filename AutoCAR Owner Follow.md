@@ -63,7 +63,7 @@
 | **개발 언어 및 도구** | Python, Jupyter Notebook, VS Code, Git, GitHub, SSH 원격 접속 |
 | **영상 처리** | OpenCV (영상 입력, 이미지 로그 및 실시간 프로세싱) |
 | **객체 탐지 및 추적** | 경량 YOLO 모델 / MobileNet-SSD, DeepSORT / BoT-SORT |
-| **제스처 및 재식별** | Pose Estimation (신체 관절 좌표 분석), OSNet 기반 ReID (외형 특징 벡터 추출) |
+| **재식별** | OSNet 기반 ReID (외형 특징 벡터 추출) |
 | **데이터 관리** | JSON 형식 파일 저장 또는 SQLite 경량 데이터베이스 |
 | **주행 및 안전 제어** | 비례 제어 알고리즘(Kp), 데드존 필터, 다단계 조건문 기반 Safety Manager |
 
