@@ -1,349 +1,579 @@
-# AutoCAR 사용자 추종 프로젝트 개발 로그
+# AutoCAR 사용자 추종 프로젝트 통합 개발로그
 
-- 작성일: 2026-07-15
-- 장치 프로젝트 경로: `/home/soda/Project/python/notebook`
-- 대상 장비: Hanback AutoCAR Prime
-- 문서 목적: 개발 내용, 장치 검증 결과, 장애 대응 내역 및 남은 검증 항목 기록
+- 최초 작성일: 2026-07-15
+- 최종 정리일: 2026-07-16
+- 장비: Hanback AutoCAR Prime
+- 장비 프로젝트 경로: `/home/soda/Project/python/notebook`
+- 현재 배포 버전: `v0.7.2`
+- 최신 패키지: `outputs/KNU_RC_DEVICE_Y_POSE_v0.7.2.zip`
 
-> 이 문서에서 `완료`는 실제 AutoCAR 장치에서 확인된 항목을 뜻한다. `적용 후 재검증` 항목은 코드나 설정 변경 절차를 작성했지만, 장치 재시작 후 최종 결과 확인이 아직 필요한 항목이다.
+## 날짜별 개발 타임라인
 
-## 1. 개발 목표
-
-- AutoCAR Prime에서 동작하는 온디바이스 사용자 추종 프로그램 개발
-- ROS 없이 POP 라이브러리와 장치 기본 제어 API 사용
-- 사람 검출, 손 흔들기 인증, 주인 재식별 및 추종 구현
-- LiDAR 장애물 감지와 Bluetooth MAC 기반 사용자 인증 연동
-- 카메라 PAN/TILT가 주인 방향을 따라가도록 제어
-- 노트북 WebView 대시보드에서 영상, LiDAR, 상태 및 차량 제어 제공
-- Jupyter, tmux, systemd 환경에서 운용 및 디버깅 가능하도록 구성
-
-## 2. 장치 환경
-
-| 항목 | 확인 내용 | 상태 |
+| 날짜 | 개발 단계 | 주요 결과 |
 |---|---|---|
-| 장비 | AutoCAR Prime, NVIDIA Jetson Xavier 계열, aarch64 | 완료 |
-| OS | Ubuntu 22.04로 전달받았으나 실제 장치 커널은 L4T R32.4.3 계열 | 실제 장치 기준 사용 |
-| Python | 3.6.x | 완료 |
-| CUDA | 10.2 계열 | 완료 |
-| PyTorch | `1.4.0.post4` | 완료 |
-| torchvision | `0.5.0a0` 계열 | 완료 |
-| OpenCV | 4.3.0 계열 | 완료 |
-| POP | 설치 및 장치 제어 사용 가능 | 완료 |
-| ROS1 | 미설치, 사용하지 않음 | 완료 |
-| 프로젝트 경로 | `/home/soda/Project/python/notebook` | 완료 |
+| 2026-07-13 | 요구사항 및 기본 구조 수립 | ROS 없는 AutoCAR 서비스, 온디바이스 AI, WebView 대시보드 방향 확정 |
+| 2026-07-14 | 실제 장비 환경 검증 및 인수인계 | 장비 경로·POP·YOLO·차량·LiDAR·Bluetooth·운영환경 확인, 남은 검증 분리 |
+| 2026-07-15 | 성능 개선부터 Y 포즈 인증까지 집중 개발 | v0.3.0~v0.7.2 구현, 현장 오류 재현 및 누적 패키지 생성 |
+| 2026-07-16 | 문서 통합 및 날짜별 재정리 | 개발로그 통합, 완료·미완료 검증과 최신 배포본 명시 |
 
-환경 확인 중 Numba가 다음 경고를 출력했다.
+---
 
-```text
-Insufficiently recent colorama version found. Numba requires colorama >= 0.3.9
-```
+### 2026-07-13 — 요구사항 정리와 기본 아키텍처
 
-이는 경고이며 프로그램 중단 오류는 아니지만, 같은 Python 3.6 환경에서 `colorama >= 0.3.9`인지 확인할 필요가 있다.
+#### 요구사항
 
-## 3. 주요 아키텍처 결정
+- AutoCAR Prime에서 ROS1 없이 동작
+- 온디바이스 YOLO, CNN/Pose, 한국어 TTS 사용
+- 노트북 WebView 대시보드 제공
+- 카메라, LiDAR, Bluetooth, 차량, PAN/TILT를 하나의 서비스로 통합
+- 주피터에서 설치·실행·종료·로그 확인
+- systemd와 tmux를 이용한 운영·디버깅 구조 준비
 
-### 3.1 영상 및 사람 검출
+#### 주요 결정
 
-- 모든 영상 처리 크기는 32의 배수만 허용한다.
-- 장치 해상도와 추론 해상도는 `320 x 320`으로 사용한다.
-- 기존 YOLOv5 로컬 PyTorch 로더는 장치의 구형 PyTorch와 호환 문제가 있어 운영 경로에서 제외했다.
-- 장치 내장 POP 모델을 사용하는 `Pilot.Object_Follow` 방식으로 전환했다.
-- 장치 기본 모델은 POP 경로의 `yolov4-tiny`를 사용한다.
-- `Pilot.Camera(width=320, height=320)`와 `Pilot.Object_Follow(camera)` 조합의 사람 검출을 확인했다.
-- 최초 모델 로딩과 최초 추론은 느릴 수 있으나, 이후 추론 자체는 정상 작동하는 것을 확인했다.
+- 장비 설치 경로를 `/home/soda/Project/python/notebook`으로 통일
+- 영상 입력 크기는 32의 배수만 허용
+- 얼굴인식은 사용하지 않음
+- Bluetooth 등록 MAC 연결 해제 시 즉시 정지
+- LiDAR 최소 비상 안전거리를 0.1m로 설정
+- 대시보드 수동운전은 인증된 사용자만 허용
+- 대시보드 시작과 자율 추종은 상호 배타적으로 제어
 
-### 3.2 상태 흐름
+#### 초기 산출물
 
-```text
-IDLE
-  -> WAIT_GESTURE
-  -> REGISTER_OWNER
-  -> FOLLOW_OWNER
-  -> SEARCH_OWNER
-  -> REAUTHENTICATION
-```
+- AutoCAR Python 패키지 기본 구조
+- 장치별 adapter 구조
+- 상태 머신과 대시보드 API
+- systemd 및 tmux 보조 스크립트
 
-- 대시보드에서 추종을 시작한다.
-- Bluetooth 인증 장치가 연결돼 있어야 추종을 시작할 수 있다.
-- 손 흔들기를 감지한 사람을 주인으로 등록한다.
-- 주인을 잃으면 5초 동안 검색한다.
-- 5초 안에 찾지 못하면 재인증 상태로 전환한다.
-- 재인증에는 다시 손 흔들기를 사용한다.
-- 얼굴 인식은 사용하지 않는다.
+---
 
-### 3.3 차량 및 카메라 제어
+### 2026-07-14 — 실제 장비 검증과 인수인계
 
-- 차량 이동은 POP 차량 제어 함수와 `forward()`, `backward()` 계열 API를 사용한다.
-- 조향값은 `-1.0 ~ 1.0` 범위로 제한한다.
-- 카메라 PAN/TILT가 등록된 주인의 영상 중심 오차를 따라가도록 제어기를 추가했다.
-- PAN/TILT 이동은 데드밴드, 최대 이동량 및 갱신 주기를 적용해 흔들림을 줄였다.
-- 카메라가 회전한 각도는 차량 조향과 LiDAR-카메라 방향 결합에 보상한다.
-- 대시보드에서 추종 및 수동운전 공통 속도 제한을 변경할 수 있도록 API와 슬라이더를 추가했다.
+#### 확인 완료
 
-카메라 추적 기본값은 다음과 같다.
+- Python 3.6.x, CUDA 10.2, OpenCV 4.3, POP 환경 확인
+- ROS1 미설치 및 미사용 확정
+- 로컬 YOLOv5 PyTorch 모델 사용 확정
+- 차량 `forward()`, `backward()` 계열 제어 방향 확인
+- 카메라와 PAN/TILT 사용 가능 확인
+- RPLIDAR 계열 장치와 `/dev/ttyUSB*` 연결 경로 확인 진행
+- BlueZ D-Bus를 통한 MAC 연결 확인 방식 확정
+- 한국어 TTS와 필수 안내문구 확정
+- 대시보드 필수 기능과 인증 정책 확정
 
-```json
-{
-  "enabled": true,
-  "pan_center": 90.0,
-  "tilt_center": 45.0,
-  "pan_min": 20.0,
-  "pan_max": 160.0,
-  "tilt_min": 0.0,
-  "tilt_max": 90.0,
-  "pan_gain_deg": 6.0,
-  "tilt_gain_deg": 4.0,
-  "max_step_deg": 3.0,
-  "deadband_x": 0.12,
-  "deadband_y": 0.12,
-  "update_interval_seconds": 0.12,
-  "pan_direction": 1.0,
-  "tilt_direction": -1.0
-}
-```
+#### 인수인계 기준
 
-PAN/TILT 실제 방향이 반대라면 다음 값으로 보정한다.
+- 완료된 장비 검증은 반복하지 않음
+- 남은 필수 검증부터 진행
+- 차량 시험은 안전을 위해 바퀴를 띄운 상태에서 수행
+- 실제 하드웨어 설정과 사용자별 보정값은 장비 config에 보존
 
-- 좌우 반대: `pan_direction = -1.0`
-- 상하 반대: `tilt_direction = 1.0`
+#### 당시 남은 핵심 검증
 
-## 4. LiDAR
+- LiDAR baud rate와 회전 방향 확정
+- 카메라 flip 및 PAN/TILT 방향 보정
+- 실제 추종 속도와 조향 실측
+- TTS 장비 출력 확인
+- systemd/tmux 장시간 운용 확인
 
-| 항목 | 확인 내용 | 상태 |
-|---|---|---|
-| 장치 | RPLIDAR 계열 | 완료 |
-| 포트 | `/dev/ttyUSB0` | 완료 |
-| baud rate | `115200` | 완료 |
-| `256000` | descriptor 오류로 사용하지 않음 | 완료 |
-| 상태 | model 40, firmware 1.28, hardware 7, health Good | 완료 |
-| 장애물 정지 | 전방 장애물 정지 및 해제 후 복구 확인 | 완료 |
+---
 
-LiDAR 전방각은 장치 장착 방향에 따라 보정해야 한다. Windows 작업본의 기본값보다 실제 장치의 `config/autocar.json` 값과 현장 측정값을 우선한다.
+### 2026-07-15 — 집중 구현 및 현장 오류 해결
 
-주인 거리는 다음 조건에서만 표시된다.
+#### 1단계: 성능·지연 개선 (`v0.3.0`~`v0.3.1`)
 
-1. 대시보드 상태가 `FOLLOW_OWNER`이다.
-2. 카메라가 주인 후보를 선택했다.
-3. 주인 중심 방향과 LiDAR 점의 각도 매칭에 성공했다.
+- YOLO 입력 320x320 적용
+- 대시보드 영상 5 FPS 적용
+- 처리되지 못한 오래된 프레임 폐기
+- 최신 프레임 단일 슬롯 구조 적용
+- 주기적 메모리 정리와 제한된 이력 구조 적용
+- 추론, 전체 처리, JPEG, 프레임 나이 및 API RTT 지연 측정 추가
 
-따라서 `IDLE` 상태의 주인 거리가 `--`로 보이는 것은 정상이다. `FOLLOW_OWNER`에서도 `--`가 계속되면 `front_angle_deg`, `clockwise`, 카메라 FOV 및 `association_window_deg`를 실제 장착 방향으로 교정해야 한다. 매칭 범위를 과도하게 넓히면 주변 장애물을 주인 거리로 잘못 사용할 수 있으므로 현장 교정 없이 임의 확대하지 않는다.
+#### 2단계: 카메라 기반 추종 (`v0.4.0`)
 
-## 5. Bluetooth 인증
+- 카메라 캡처 30 FPS, YOLO·제어 목표 8 FPS로 분리
+- LiDAR 주인 거리를 속도 계산에서 제외
+- 사용자 바운딩박스 높이 비율로 속도 계산
+- PAN 오프셋과 화면 X 좌표를 이용해 차량 조향
+- LiDAR는 전방 장애물 안전정지와 거리 참고표시에 유지
 
-- 인증 장치 MAC은 `/home/soda/Project/python/notebook/config/autocar.json`의 `bluetooth.owner_mac`에 저장한다.
-- 확인된 MAC은 `F0:D7:93:3A:32:08`이다.
-- BlueZ 기준 `Paired: True`, `Connected: True`, `Trusted: True`를 확인했다.
-- Bluetooth 연결 해제 시 차량 즉시 정지 동작을 확인했다.
+#### 3단계: 사용자 외형 등록 (`v0.5.0`)
 
-### 5.1 발생 장애
+- 화면 중앙의 같은 사람을 1.5초 유지하면 등록 후보로 선택
+- 상의 HSV 2x3 공간 패턴 저장
+- CDS 채널 7을 이용한 조도 보정
+- 밝기 변형 패턴을 함께 저장해 조도 변화 대응
+- 이동 최소속도 50, 대시보드 범위 50~99 적용
 
-기존 모니터가 1초마다 `bluetoothctl info <MAC>`을 새 프로세스로 실행하면서 다음 오류가 발생했다.
+#### 4단계: Pose 인증 도입 (`v0.6.0`)
 
-```text
-WARNING autocar.adapters.bluetooth: Bluetooth status failed:
-[Errno 12] Cannot allocate memory
-```
+- NVIDIA `trt_pose` ResNet18 224x224 모델 설치
+- Pose CUDA 원시 출력 확인
+- 스켈레톤 손 흔들기 인증 구현
+- 인증할 때만 Pose를 목표 4 FPS로 실행
 
-당시 메모리는 약 7.6 GiB 중 3.5 GiB를 사용 가능했으므로 단순 물리 RAM 고갈로 보기는 어려웠다. CUDA/PyTorch가 실행 중인 프로세스에서 반복적으로 subprocess를 만드는 구조가 원인이었다.
+#### 5단계: PyTorch 1.4 및 YOLO 호환 (`v0.6.1`~`v0.6.3`)
 
-### 5.2 조치
+- PyTorch 1.4에서 로컬 `torch.hub source=local` 미지원 문제 해결
+- YOLOv5 `hubconf.py` 직접 로딩 방식 적용
+- 누락 Arial.ttf 대신 시스템 글꼴을 오프라인 제공
+- YOLO의 torch/torchvision 자동 업그레이드 차단
+- PyTorch 1.4용 SiLU 호환 계층 추가
+- 잘못 설치된 사용자 torch 1.10.2와 torchvision 0.11.3 제거 절차 정리
 
-- `bluetoothctl` 반복 실행을 제거했다.
-- `org.bluez.Device1`의 `Connected` 속성을 D-Bus로 직접 조회하도록 변경했다.
-- 장치에서 Python `dbus` 모듈 사용 가능 여부와 실제 연결값 `True`를 확인했다.
-- 변경 후에는 새 프로세스를 매초 생성하지 않는다.
+#### 6단계: Pose 네이티브 충돌 제거 (`v0.6.4`)
 
-## 6. WebView 대시보드
+- 제스처 실행 시 프로세스 `-11` 종료 확인
+- 사용 가능 메모리 6.5GB로 OOM이 아님을 확인
+- 원인을 `trt_pose.ParseObjects` C++ 확장 충돌로 분리
+- 다중인물 PAF 연결을 제거하고 관절 heatmap 최고점을 순수 PyTorch로 추출
+- 초기 카메라 TILT를 35도로 변경하고 시작 직후 실제 각도 명령 전송
 
-구현 기능:
+#### 7단계: Y 포즈 인증 (`v0.7.0`~`v0.7.2`)
 
-- 사용자 검출 영상
-- LiDAR 점 지도
-- 상태, 사유, FPS 및 연결 상태 표시
-- 추종 시작/정지
-- 인증 사용자 수동운전
-- 비상정지 및 복구
-- 차량 속도 제한 설정
-- 카메라 PAN/TILT 현재값 표시
+- 손 흔들기를 정적 Y 포즈로 변경
+- 정면 사용자에서 COCO 좌우가 화면과 반대로 보이는 문제 수정
+- 저해상도에서 팔꿈치가 누락되는 문제를 고려해 팔꿈치를 선택사항으로 변경
+- 양쪽 어깨와 손목을 필수 관절로 유지
+- 6개 Pose 샘플 중 4개 이상 성공하도록 조정
+- 손목 높이·간격 조건을 실제 장비 영상에 맞게 조정
+- 실패 원인을 대시보드 상태 문자열로 표시
 
-대시보드 상태와 LiDAR의 기본 폴링 주기는 500 ms였다. 지연 개선을 위해 250 ms로 낮추는 변경 절차를 작성했다. 장치 적용 여부는 재시작 후 브라우저 `Ctrl+F5`와 개발자 도구를 통해 재확인해야 한다.
+#### 2026-07-15 최종 결과
 
-실제 AI 루프는 약 4~5 FPS로 관찰됐다. 따라서 현재 구조에서 새 검출 결과의 최소 지연은 약 0.2~0.25초이다. 설정상 스트림이 15 FPS여도 분석 완료 프레임은 AI 처리속도보다 빠르게 갱신되지 않는다. 실제 영상 자체를 15 FPS에 가깝게 보여주려면 카메라 표시 루프와 AI 추론 루프를 분리해야 한다.
+- 최신 배포본 `v0.7.2` 생성
+- Python 및 JavaScript 문법 검사 통과
+- 단위 테스트 29개 통과
+- 누적 설치 시뮬레이션 통과
+- 실제 장비에서 Y 포즈 `matched → FOLLOW_OWNER` 최종 검증은 남음
 
-## 7. 추종거리 설정 변경
+---
 
-사용자가 최종 지정한 거리 정책은 다음과 같다.
+### 2026-07-16 — 문서 통합과 다음 검증 준비
 
-```json
-{
-  "target_distance_m": 0.3,
-  "stop_distance_m": 0.2,
-  "emergency_distance_m": 0.1
-}
-```
+#### 문서 작업
 
-- 목표 추종 간격: 0.3 m
-- 일반 정지 거리: 0.2 m
-- 최소 안전거리/비상정지 거리: 0.1 m
+- 기존 상세 개발로그 보존
+- 환경·아키텍처·문제 해결·버전 이력을 통합 문서로 정리
+- 날짜별 타임라인을 별도 구성해 개발 흐름을 명확히 표시
+- 완료 항목과 남은 필수 장비 검증을 분리
 
-이 값은 설정 변경 절차까지 작성했다. 장치 재시작 후 실제 `config/autocar.json` 값과 물리 주행 결과를 다시 확인해야 한다.
+#### 현재 기준점
 
-> 주의: 정확한 RPLIDAR 모델의 최소 측정거리가 확정되지 않았다. 센서가 0.1 m를 안정적으로 측정하지 못할 수 있으므로, 최초 검증은 바퀴를 들어 올리고 속도 제한을 5 이하로 설정한 상태에서 수행한다.
+- 기준 버전: `v0.7.2`
+- 기준 인증 방식: 중앙 사용자 선택 후 Y 포즈
+- 기준 TILT: 35도
+- 기준 Pose 처리: C++ `ParseObjects` 미사용
+- 다음 작업: 실제 장비에서 대시보드 실패 사유를 확인하며 `FOLLOW_OWNER` 전환 검증
 
-## 8. 프로세스 중복 실행 장애
+---
 
-### 8.1 증상
+## 1. 프로젝트 목표
 
-- 카메라와 LiDAR 대시보드 갱신 지연
-- LiDAR가 ONLINE에서 OFFLINE으로 변경
-- 다음 로그가 반복됨
+AutoCAR Prime에서 ROS 없이 온디바이스 AI 기반 사용자 인증 및 추종 기능을 구현한다.
 
-```text
-Check bit not equal to 1
-read failed: device reports readiness to read but returned no data
-device disconnected or multiple access on port?
-Too many bytes in the input buffer
-```
+주요 기능은 다음과 같다.
 
-### 8.2 원인
+- 전방 카메라와 YOLOv5를 이용한 사람 검출
+- Pose 스켈레톤 기반 주인 인증
+- 등록된 옷 색상·공간 패턴과 CDS 조도를 이용한 주인 재식별
+- 카메라 PAN/TILT를 이용한 사용자 방향 추적
+- 카메라상 사용자 크기를 이용한 추종 속도 계산
+- LiDAR를 이용한 주인 거리 참고값과 전방 장애물 안전정지
+- Bluetooth MAC 연결 상태를 이용한 사용자 인증 보조 및 연결 해제 시 즉시 정지
+- 한국어 TTS 안내
+- 노트북 WebView 대시보드에서 영상, LiDAR, 상태, 수동운전, 속도 제한 및 비상정지 제공
+- 주피터에서 설치·실행·로그 확인·종료 가능
 
-동시에 두 개의 AutoCAR 프로세스가 실행되고 있었다.
+## 2. 확인된 장비 환경
 
-```text
-PID 2065  /usr/bin/python3 -m autocar.main
-PID 31680 /usr/bin/python3 -m autocar.main
-```
+| 항목 | 확인값 |
+|---|---|
+| OS | Ubuntu 22.04 / SODA OS 기반 환경 |
+| Python | 3.6.x |
+| PyTorch | `1.4.0.post4` |
+| Torchvision | `0.5.0a0+85b8fbf` |
+| CUDA | `10.2.89` |
+| cuDNN | `8.0.0.180-1` |
+| TensorRT | `7.1.3.0` |
+| OpenCV | `4.3.0` |
+| POP | 설치 및 사용 가능 |
+| ROS1 | 미설치, 사용하지 않음 |
+| YOLO | 로컬 YOLOv5 v6.0, PyTorch 모델 |
+| Pose | NVIDIA `trt_pose` ResNet18 224x224 |
+| LiDAR | RPLIDAR 계열, `/dev/ttyUSB0`에서 동작 확인 |
+| Bluetooth | BlueZ D-Bus, 등록 MAC 방식 |
 
-두 프로세스가 `/dev/ttyUSB0`과 카메라를 동시에 사용하면서 LiDAR 데이터가 손상되고 화면 갱신이 불안정해졌다.
-
-### 8.3 조치
-
-- `/proc/*/cmdline`에서 정확히 `autocar.main`을 실행하는 PID만 찾도록 실행/종료 함수를 작성했다.
-- 실행 전에 기존 PID가 있으면 새 프로세스를 만들지 않는다.
-- 종료 시 먼저 `SIGTERM`으로 차량 정지와 정상 종료를 요청한다.
-- 5초 안에 종료되지 않으면 남은 AutoCAR PID에만 `SIGKILL`을 적용한다.
-- 재실행 전 AutoCAR PID가 0개인지, 실행 후 정확히 1개인지 확인한다.
-
-정상 종료가 5초 안에 끝나지 않은 사례가 있었다. 카메라 `capture.release()` 또는 LiDAR 종료 처리의 블로킹 가능성이 있으므로 종료 경로 개선이 남아 있다.
-
-## 9. 실행 환경과 인증정보
-
-운영 인증정보는 명령행에 매번 직접 쓰지 않고 다음 파일에 한 번 저장한다.
+Pose 모델 경로는 다음과 같다.
 
 ```text
-/home/soda/Project/python/notebook/config/autocar.env
+/home/soda/Project/python/notebook/models/resnet18_baseline_att_224x224_A_epoch_249.pth
 ```
 
-저장 항목:
+장비에서 확인한 Pose 원시 출력은 정상이다.
 
-```bash
-KNU_RC_SECRET_KEY='...'
-KNU_RC_USER='...'
-KNU_RC_PASSWORD='...'
+```text
+cmap: (1, 18, 56, 56)
+paf:  (1, 42, 56, 56)
 ```
 
-- 파일 권한은 `0600`으로 제한한다.
-- 값은 개발 로그나 Git 저장소에 기록하지 않는다.
-- 실행 스크립트 `/home/soda/Project/python/notebook/run-autocar.sh`가 환경파일과 `config/autocar.json`을 로드한다.
-- 대시보드는 `http://<AutoCAR-IP>:8080`으로 접속한다.
+## 3. 현재 소프트웨어 구조
 
-Jupyter에서는 등록된 `start_autocar()`와 `stop_autocar()` 함수를 사용한다. 프로그램 실행 후 `autocar.main` PID가 정확히 하나인지 반드시 확인한다.
+```text
+CameraAdapter ──> YOLO PersonDetector ──> IoU Tracker
+                       │
+                       ├─> 중앙 사용자 선택
+                       ├─> trt_pose 관절 heatmap
+                       └─> 옷 HSV 2x3 공간 패턴
 
-## 10. 패키지 및 배포 산출물
+CDS ────────────────> 등록/현재 밝기 보정
+LiDAR ──────────────> 주인 거리 참고 + 장애물 안전정지
+Bluetooth ──────────> MAC 연결 인증 + 연결 해제 비상정지
 
-장치의 POP 카메라/검출기 및 현재 설정을 보존한 상태로 카메라 추적과 속도 제어 기능을 병합했다.
+Owner Profile ──────> 사용자 재식별
+Camera Controller ──> PAN/TILT 추적
+Driving Controller ─> 카메라 사용자 크기 기반 속도 + 화면/PAN 기반 조향
 
-| 파일 | 용도 | SHA-256 |
-|---|---|---|
-| `outputs/KNU_RC_DEVICE_CAMERA_SPEED_v0.2.0.zip` | 장치 전용 업데이트 | `EEA978D12BD6903578973F689D5509BE9EB8152DDB51E0DBF3B4CB081EFC0CE4` |
-| `outputs/install_device_camera_speed.py` | Jupyter 설치 스크립트 | `2EFFF6004ADB527F454FB43297E980EC765C34501EE3F254F553406630339DC2` |
+Flask/Waitress ─────> 인증 대시보드, MJPEG, 상태 API, 수동운전
+```
 
-설치기는 기존 파일과 설정을 `backups/`에 보관하고, 필요한 파일만 교체하며, 기존 POP/카메라/LiDAR/Bluetooth/TTS 설정을 유지한다.
+주요 모듈은 다음과 같다.
 
-Bluetooth D-Bus 변경과 2026-07-15 이후 현장 조정값은 위 v0.2.0 패키지 생성 이후 변경 사항이다. 다음 배포본을 만들 때 반드시 포함해야 한다.
+| 파일 | 역할 |
+|---|---|
+| `autocar/service.py` | 전체 장치와 상태 제어 통합 |
+| `autocar/state_machine.py` | 추종 상태 전이 |
+| `autocar/adapters/vision.py` | YOLO 및 Pose 추론 |
+| `autocar/wave.py` | Y 포즈와 기존 제스처 판정기 |
+| `autocar/owner.py` | 옷 색상·밝기 패턴 등록 및 재식별 |
+| `autocar/controller.py` | 차량 속도·조향 및 카메라 추적 |
+| `autocar/adapters/lidar.py` | LiDAR 연결, 장애물 및 참고 거리 |
+| `autocar/adapters/bluetooth.py` | BlueZ D-Bus MAC 연결 확인 |
+| `autocar/adapters/cds.py` | POP CDS 조도 입력 |
+| `autocar/web/app.py` | 대시보드 API와 인증 |
 
-## 11. 완료된 검증
+## 4. 현재 상태 흐름
 
-- AutoCAR Prime 장치 환경 및 주요 라이브러리 확인
-- POP 기반 사람 검출과 실제 카메라 입력 확인
-- 320 x 320 영상 및 32배수 제한 확인
-- 실제 차량 전진과 조향 방향 확인
-- LiDAR `/dev/ttyUSB0`, 115200 baud 및 health 확인
-- 장애물 정지와 장애물 제거 후 상태 복구 확인
-- Bluetooth 연결 및 연결 해제 즉시 정지 확인
-- 대시보드 로그인과 인증 사용자 수동운전 확인
-- 사용자 추종, 사용자 분실 시 정지, 5초 검색 후 재인증 확인
-- 대시보드 비상정지 확인
-- 카메라 PAN/TILT 추적 및 속도 설정 기능 코드 병합
-- 로컬 단위 테스트 13개 통과
-- Python 3.6 문법 및 대시보드 JavaScript 문법 검사 통과
-- Bluetooth D-Bus 연결 조회 확인
-- 중복 실행으로 인한 LiDAR 장애 원인 확인
+```text
+INIT
+  └─> IDLE
+        ├─> WAIT_OWNER
+        │     └─> VERIFY_GESTURE
+        │            ├─> REGISTER_OWNER
+        │            └─> FOLLOW_OWNER
+        │                   ├─> SEARCH_OWNER
+        │                   ├─> BLOCKED
+        │                   └─> REAUTHENTICATION
+        ├─> MANUAL
+        └─> EMERGENCY
+```
 
-## 12. 남은 필수 검증
+현재 인증 및 추종 순서는 다음과 같다.
 
-1. AutoCAR 프로세스 단일 실행 잠금 적용 및 재부팅 후 중복 실행 방지 확인
-2. `target_distance_m=0.3`, `stop_distance_m=0.2`, `emergency_distance_m=0.1` 실제 장치 설정 확인
-3. 저속에서 실제 추종 간격과 제동 오차 측정
-4. RPLIDAR의 정확한 모델명과 0.1 m 측정 가능 여부 확인
-5. `FOLLOW_OWNER` 상태에서 주인 거리 표시 확인
-6. LiDAR 전방각과 카메라 PAN 각도 결합 교정
-7. 대시보드 250 ms 갱신 적용 여부 및 지연 재측정
-8. 영상 표시와 AI 추론 루프 분리 필요성 판단
-9. 정상 종료가 지연되는 카메라/LiDAR 종료 경로 개선
-10. `knu-rc.service` systemd 설치 및 `active` 상태 확인
-11. 재부팅 후 systemd 자동 시작 확인
-12. systemd와 tmux 상호 배타 실행 확인
-13. 30~60분 연속 추종 soak test 수행
-14. 카메라 실패, LiDAR 분리, Bluetooth 미연결 상태의 fail-safe 재검증
-15. 로그 순환, 설정 백업 및 복구 절차 검증
+1. 대시보드에서 추종 시작
+2. Bluetooth, 카메라, LiDAR 및 Pose 준비상태 확인
+3. 화면 중앙의 같은 사람을 1.5초 유지
+4. Y 포즈 인증과 동시에 옷/CDS 패턴 수집
+5. 사용자 프로필 확정
+6. 카메라 기반 추종 시작
+7. 주인을 잃으면 즉시 정지 후 5초간 검색
+8. 검색 실패 시 TTS 안내 후 재인증
 
-## 13. 다음 작업 권장 순서
+## 5. 현재 카메라·추론 설정
 
-1. 물리 전원을 끄거나 바퀴를 들어 올린다.
-2. AutoCAR 프로세스가 없는지 확인한다.
-3. 거리 설정과 대시보드 변경 내용을 확인한다.
-4. 프로그램을 하나만 실행한다.
-5. 대시보드 속도를 5 이하로 제한한다.
-6. Bluetooth, 카메라 및 LiDAR ONLINE 상태를 확인한다.
-7. 손 흔들기로 주인을 등록하고 `FOLLOW_OWNER` 상태를 확인한다.
-8. 주인 거리 표시와 0.3 m 추종 간격을 실제 자로 측정한다.
-9. 문제가 없으면 속도를 5, 10, 15 순서로 단계적으로 높인다.
-10. 결과를 기록한 뒤 systemd/tmux 및 장시간 시험으로 진행한다.
+| 설정 | 값 |
+|---|---:|
+| 카메라 캡처 | 30 FPS |
+| YOLO 추론·제어 목표 | 8 FPS |
+| 대시보드 영상 | 5 FPS |
+| YOLO 입력 | 320x320 |
+| Pose 입력 | 224x224 |
+| Pose 인증 추론 | 4 FPS |
+| 초기 PAN | 90도 |
+| 초기 TILT | 35도 |
 
-## 14. 2026-07-15 장시간 성능 및 메모리 관리 업데이트
+영상 크기는 장비 요구조건에 따라 32의 배수만 허용한다. 카메라는 최신 프레임 하나만
+유지하고 처리되지 못한 과거 프레임은 폐기한다. Pose는 인증 단계에서만 실행하며 일반
+추종 중에는 실행하지 않는다.
 
-장시간 실행 후 추론과 손 흔들기 인식이 느려지는 현상에 대응하기 위해 v0.3.0 업데이트를 작성했다.
+## 6. 현재 Y 포즈 인증 정책
 
-### 변경 내용
+손 흔들기보다 저 FPS에서 안정적인 정적 Y 포즈를 사용한다.
 
-- 카메라와 추론 크기를 320x320으로 고정
-- 대시보드 MJPEG 스트림을 15 FPS에서 5 FPS로 변경
-- 상태와 LiDAR 대시보드 폴링을 500 ms에서 250 ms로 변경
-- 카메라 프레임은 큐를 쌓지 않고 최신 프레임 한 장만 덮어쓰는 기존 구조 유지
-- 사라진 track ID의 손 흔들기 시계열 삭제
-- 사라진 track ID의 96x96 모션 비교 프레임 삭제
-- 주인 등록 완료 후 임시 특징 샘플 배열 해제
-- 300초마다 Python 순환 객체 GC 수행
-- CUDA 캐시는 자동으로 강제 해제하지 않음
-- 프로세스 RSS 메모리와 정리 횟수를 telemetry 및 대시보드에 표시
-- 목표거리와 비상거리를 HTML 고정 문구 대신 실제 설정에서 표시
-- 목표/정지/비상거리 기본값과 적용값을 0.3/0.2/0.1 m로 통일
+```text
+ \ O /
+   |
+  / \
+```
 
-### 검증 결과
+판정 조건은 다음과 같다.
 
-- Python 3.6 문법 검사 통과
-- 대시보드 JavaScript 문법 검사 통과
-- 단위 테스트 15개 통과
-- 장치 전용 설치 시뮬레이션 통과
-- POP `PersonDetector(..., camera_adapter=self.camera)` 생성자 보존 확인
-- 기존 detector backend, Bluetooth MAC, LiDAR 및 TTS 설정을 덮어쓰지 않는 선택 병합 확인
+- 필수 관절: 양쪽 어깨와 양쪽 손목
+- 팔꿈치는 저해상도 검출 누락을 고려해 선택사항
+- 두 손목이 어깨보다 어깨너비의 0.15배 이상 높아야 함
+- 두 손목이 몸 중심의 서로 반대편에 있어야 함
+- 손목 사이 간격이 어깨너비의 1.2배 이상이어야 함
+- Pose 6개 샘플 중 4개 이상 조건을 만족해야 함
+- 약 1.2초 동안 유지
+- 인증 제한시간 5초
+- 예상 추종 시작시간 약 3~5초
 
-### 산출물
+COCO의 left/right는 사람의 해부학적 방향이므로, 정면 촬영 시 화면 좌우가 바뀌는 점을
+반영해 손목 이름별 화면 방향을 가정하지 않는다.
+
+실패 시 대시보드 상태 사유에 다음과 같은 원인을 표시한다.
+
+```text
+Y pose: missing-left_wrist
+Y pose: left-wrist-not-high
+Y pose: wrists-not-opposite
+Y pose: wrists-too-close
+Y pose: matched
+```
+
+## 7. 사용자 프로필 등록
+
+- 얼굴인식은 사용하지 않는다.
+- 중앙 사용자 선택 후 상의 영역을 2x3 격자로 나눈다.
+- 각 구역의 HSV 색상·공간 패턴을 저장한다.
+- 등록 샘플은 20프레임이다.
+- 밝기 배율 0.60, 0.80, 1.00, 1.20, 1.40의 예상 패턴을 함께 저장한다.
+- POP `Cds(7).read()`를 약 0.25초 주기로 읽는다.
+- 등록 조도와 현재 조도의 비율 및 역비율을 모두 비교한다.
+- CDS가 불안정해도 저장된 밝기 변형 패턴으로 재식별할 수 있다.
+
+## 8. 추종 및 안전 정책
+
+### 8.1 속도
+
+- 정지 명령: 0
+- 움직이는 최소 추종 속도: 50
+- 대시보드 설정 범위: 50~99
+- 카메라 바운딩박스 높이 비율로 속도 계산
+- 목표 사용자 높이 비율: 0.72
+- 현재 프레임 강제정지 높이 비율: 0.88
+- LiDAR 주인 거리는 속도 계산에 사용하지 않음
+
+최소 속도 50 정책 때문에 정지 직전 속도 변화가 클 수 있으므로 바퀴를 띄운 상태에서
+초기 시험해야 한다.
+
+### 8.2 조향과 카메라
+
+- 화면 X 좌표와 PAN 오프셋을 함께 사용해 차량 조향
+- TILT는 카메라 상하 추적에만 사용
+- 프로그램 시작 시 PAN 90도, TILT 35도 명령 전송
+- 추종 시작 및 재인증 시 카메라 중심 복귀
+
+### 8.3 LiDAR
+
+- LiDAR 주인 거리는 대시보드 참고값으로만 표시
+- 주인 거리가 검출되지 않아도 카메라 추종은 계속 수행
+- 전방 장애물 0.2m 미만이면 정지
+- 전방 장애물 0.1m 이하이면 비상정지
+- 추종 중 LiDAR 오프라인은 안전을 위해 비상정지
+
+## 9. 주요 문제와 해결 기록
+
+### 9.1 Python·주피터 실행
+
+- `ROOT`가 문자열이면 `ROOT / "run-autocar.sh"`에서 TypeError 발생
+- `ROOT = Path("/home/soda/Project/python/notebook")`로 통일
+- 실행 셸만 종료되고 `autocar.main`이 남는 문제는 프로세스 그룹 종료로 수정
+- 로그는 `autocar-start.log`에 기록해 시작 실패 원인을 확인
+
+### 9.2 Bluetooth
+
+- 대시보드에서 Bluetooth 연결을 인식하지 못하는 문제 확인
+- BlueZ D-Bus에서 등록 MAC의 Paired, Connected, Trusted가 모두 True임을 확인
+- `Errno 12 Cannot allocate memory`는 실제 전체 RAM 부족이 아니라 기존 프로세스 및
+  D-Bus 호출 상태를 함께 점검하도록 변경
+- 연결 해제 시 차량은 즉시 비상정지
+
+### 9.3 영상·LiDAR 대시보드 지연
+
+- 카메라 추론 크기를 320x320으로 유지
+- 카메라 30 FPS, 추론 8 FPS, 대시보드 5 FPS로 역할 분리
+- 최신 프레임 단일 슬롯으로 오래된 프레임 폐기
+- JPEG, 추론, 전체 처리, 프레임 나이 및 API RTT 지연 telemetry 추가
+- 주기적 `gc.collect()`와 제한된 이력 구조로 장시간 메모리 누적 방지
+
+### 9.4 LiDAR 거리 때문에 1.5m에서 정지
+
+- 2D LiDAR가 주인 다리를 놓치면 주인 거리 계산이 사라지는 구조 확인
+- LiDAR 주인 거리를 추종 속도에서 완전히 분리
+- 카메라상 사용자 크기만으로 전진 속도 계산
+- LiDAR는 장애물 안전정지와 거리 참고표시에만 유지
+
+### 9.5 업데이트 ZIP 파일 누락
+
+- 설치 ZIP에 `autocar/adapters/cds.py`가 빠져 시작 실패
+- 이후 패키지를 AutoCAR 실행 코드 전체를 포함하는 누적 패키지로 변경
+- 장비별 `config/autocar.json`, 모델, YOLO 저장소는 보존하고 필요한 설정만 병합
+
+### 9.6 PyTorch 1.4와 로컬 YOLOv5
+
+- PyTorch 1.4는 `torch.hub.load(..., source="local")`을 지원하지 않음
+- YOLOv5 `hubconf.py`의 `custom()`을 직접 불러오는 호환 로더 추가
+- YOLOv5의 Arial.ttf 다운로드 URL이 HTTP 308을 반환하는 문제 해결
+- 시스템 DejaVu Sans 등을 `/home/soda/.config/Ultralytics/Arial.ttf`에 자동 배치
+- YOLO가 실행 중 torch와 torchvision을 자동 업그레이드하지 못하도록 차단
+- PyTorch 1.4에 없는 `torch.nn.SiLU` 호환 모듈 추가
+
+잘못 설치된 사용자 버전은 다음과 같았다.
+
+```text
+torch 1.10.2
+torchvision 0.11.3
+```
+
+이 버전이 `/home/soda/.local`에 남아 `libgomp ... cannot allocate memory in static TLS block`
+오류를 발생시켰다. 사용자 경로의 잘못된 패키지를 제거하고 `/usr/local`의 JetPack용
+PyTorch 1.4로 복구했다.
+
+### 9.7 Pose 인증 시 프로세스 `-11` 종료
+
+- Y 포즈 실행 시 대시보드 연결과 AutoCAR 프로세스가 함께 종료
+- 종료 코드 `-11`, 사용 가능 메모리 6.5GB로 OOM이 아님을 확인
+- Python 예외 없이 종료되어 `trt_pose.ParseObjects` C++ 확장 충돌로 판정
+- 중앙 단일 사용자 crop에서는 PAF 다중인물 연결이 필요하지 않으므로 C++ 파서 제거
+- 각 관절 heatmap의 최고점을 순수 PyTorch 연산으로 추출
+- 이후 Pose 인증이 전체 웹 서버를 종료시키는 네이티브 호출 경로 제거
+
+### 9.8 Y 포즈가 통과하지 않는 문제
+
+- 정면 사용자에서 COCO left/right가 화면 좌우와 반대로 나타나는 문제 수정
+- 224x224 입력과 저각도 카메라에서 팔꿈치가 자주 누락되는 문제 확인
+- 팔꿈치를 필수 관절에서 제외하고 양쪽 어깨·손목 기반으로 변경
+- 판정 조건을 실제 장비 영상에 맞게 조정
+- 실패 원인을 상태 문자열로 노출
+
+## 10. 버전별 요약
+
+| 버전 | 주요 변경 |
+|---|---|
+| v0.1.0 | 기본 AutoCAR 서비스, 대시보드, 장치 어댑터 구성 |
+| v0.2.0 | 카메라 PAN/TILT 추적과 대시보드 속도 설정 |
+| v0.3.0 | 최신 프레임 폐기, 메모리 관리, 320x320·5 FPS 대시보드 |
+| v0.3.1 | 로컬 지연 측정 telemetry 추가 |
+| v0.4.0 | 카메라 30 FPS, YOLO 8 FPS, 카메라 크기 기반 추종 |
+| v0.5.0 | 중앙 사용자 선택, 옷 패턴, CDS 보정, 최소 속도 50 |
+| v0.6.0 | `trt_pose` 스켈레톤 손 흔들기 인증 |
+| v0.6.1 | PyTorch 1.4 로컬 YOLO hubconf 호환 |
+| v0.6.2 | YOLO 오프라인 글꼴 제공 |
+| v0.6.3 | YOLO 자동 업그레이드 차단 및 SiLU 호환 |
+| v0.6.4 | C++ Pose 파서 제거, heatmap 관절 추출, TILT 35도 |
+| v0.7.0 | 손 흔들기에서 정적 Y 포즈로 변경 |
+| v0.7.1 | 정면 사용자 COCO 좌우 반전 수정 |
+| v0.7.2 | 팔꿈치 선택사항, 판정 완화, 실시간 실패 사유 추가 |
+
+## 11. 최신 배포 파일
 
 | 파일 | SHA-256 |
 |---|---|
-| `outputs/KNU_RC_DEVICE_PERFORMANCE_MEMORY_v0.3.0.zip` | `20ACCDD43DF51279A0318E5F387A37ABA8253787A6FB1D9FD2C97155902B5E15` |
-| `outputs/install_device_performance_memory.py` | `BB216E4D9054C99BDF937FBCE0B1CFE1D45B11CF2A6427C45A43BDC134D5BCA4` |
+| `outputs/KNU_RC_DEVICE_Y_POSE_v0.7.2.zip` | `3CE11F59AED4E873293CFDFAEEEFF3C1C11D305A59D2160C9D87F9ECE3531447` |
+| `outputs/install_device_skeleton_wave.py` | `469E4FEAF263F4CB9B0893A9E9957E71673CEEEC01BE3645AF0D62E7852487E2` |
 
-장치 적용 후 30~60분 soak test로 FPS, RSS 메모리, 제스처 인식시간 및 LiDAR 안정성을 비교해야 한다.
+## 12. 주피터 설치 및 실행
+
+### 12.1 설치
+
+장비 최상위 경로에 최신 ZIP과 설치기를 업로드한다.
+
+```python
+from pathlib import Path
+
+ROOT = Path("/home/soda/Project/python/notebook")
+installer = ROOT / "install_device_skeleton_wave.py"
+
+exec(
+    compile(installer.read_text(), str(installer), "exec"),
+    {"__name__": "__main__"}
+)
+```
+
+### 12.2 실행
+
+```python
+import subprocess
+import time
+
+log_path = ROOT / "autocar-start.log"
+log_handle = open(str(log_path), "w")
+
+app_process = subprocess.Popen(
+    [str(ROOT / "run-autocar.sh")],
+    cwd=str(ROOT),
+    stdout=log_handle,
+    stderr=subprocess.STDOUT,
+    start_new_session=True
+)
+
+time.sleep(30)
+log_handle.flush()
+
+if app_process.poll() is None:
+    print("AutoCAR 실행 성공, PID:", app_process.pid)
+else:
+    log_handle.close()
+    print(log_path.read_text(errors="replace"))
+```
+
+대시보드는 노트북과 AutoCAR가 같은 네트워크일 때 다음 형식으로 접속한다.
+
+```text
+http://AutoCAR-IP:8080
+```
+
+장비에서 확인된 IP는 시점에 따라 다음 인터페이스에 존재했다.
+
+```text
+192.168.101.101
+192.168.0.51
+192.168.2.1
+```
+
+노트북과 같은 서브넷의 IP를 선택해야 한다. 서버가 정상 실행되면 `0.0.0.0:8080`에서
+대기한다.
+
+## 13. 검증 현황
+
+### 완료
+
+- Pose 모델 CUDA 원시 출력 확인
+- PyTorch 1.4 및 Torchvision 0.5 복구 확인
+- YOLOv5 v6.0 로컬 모델 로딩 확인
+- 카메라 CSI 스트림 시작 확인
+- LiDAR 스캔 시작 확인
+- Waitress `0.0.0.0:8080` 서비스 확인
+- BlueZ 등록 MAC의 Paired, Connected, Trusted 확인
+- C++ Pose 파서 충돌 원인 분리 및 제거
+- Python 문법 검사
+- JavaScript 문법 검사
+- 단위 테스트 29개 통과
+- v0.7.2 누적 설치 시뮬레이션 통과
+
+### 남은 필수 장비 검증
+
+1. v0.7.2에서 실제 Y 포즈가 `matched` 후 `FOLLOW_OWNER`로 전환되는지 확인
+2. 실패 시 대시보드의 `Y pose: ...` 사유 기록
+3. 한 사람만 있는 환경과 두 사람이 겹치는 환경 비교
+4. TILT 35도에서 머리·양손·허리가 모두 화면에 포함되는지 확인
+5. Y 포즈 인증 후 옷 패턴 재식별 유지 여부 확인
+6. 주인 소실 5초 후 재인증 및 TTS 확인
+7. Bluetooth 연결 해제 즉시 차량 정지 확인
+8. 장애물 0.2m 정지와 0.1m 비상정지 실측
+9. LiDAR `Too many bytes in input buffer` 반복 발생 시 baud rate와 장치 점유 확인
+10. 바퀴를 띄운 상태에서 속도 50~99 및 정지 전환 확인
+11. 30~60분 연속 운전으로 FPS, Pose 지연, RSS, CUDA 메모리 및 대시보드 지연 확인
+
+## 14. 현재 주의사항
+
+- Jetson용 PyTorch는 임의로 pip 업그레이드하지 않는다.
+- `/home/soda/.local`에 별도 torch/torchvision이 설치되면 `/usr/local`의 JetPack 버전을
+  가릴 수 있다.
+- YOLO, Pose 모델 및 `config/autocar.json`은 백업 후 변경한다.
+- 최소 이동속도 50 정책 때문에 첫 차량 시험은 반드시 바퀴를 띄운 상태에서 수행한다.
+- 물리적 전원 스위치와 대시보드 비상정지를 즉시 사용할 수 있게 유지한다.
+- LiDAR 주인 거리는 참고값이며 주인 속도 계산에는 사용하지 않는다.
+- 얼굴정보는 수집하거나 저장하지 않는다.
